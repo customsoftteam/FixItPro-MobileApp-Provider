@@ -12,8 +12,8 @@ class ApiClient {
   static final ApiClient instance = ApiClient._();
 
   static const String _desktopBaseUrl = 'http://localhost:5000/api';
-  static const String _androidEmulatorBaseUrl = 'http://10.0.2.2:5000/api';
-  static const String _androidPhysicalDeviceBaseUrl = 'http://192.168.1.10:5000/api';
+  static const String _androidEmulatorBaseUrl = 'http://10.11.45.212:5000/api';
+  static const String _androidPhysicalDeviceBaseUrl = 'http://10.11.45.212:5000/api';
 
   String get baseUrl {
     if (kIsWeb) {

@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/booking_item.dart';
+import '../services/api_client.dart';
 import '../services/booking_service.dart';
+import '../widgets/service_workflow_dialog.dart';
 
 class BookingsScreen extends StatefulWidget {
   const BookingsScreen({super.key});
@@ -24,22 +26,25 @@ class _BookingsScreenState extends State<BookingsScreen> {
   String _activeTab = 'all';
   String _searchText = '';
   String _actionBookingId = '';
-  int _timerTick = 0;
   Timer? _timer;
 
   final List<_StatusTab> _statusTabs = const [
     _StatusTab(key: 'all', label: 'All', icon: Icons.assignment_ind_outlined),
     _StatusTab(key: 'assigned', label: 'Assigned', icon: Icons.assignment_ind_outlined),
     _StatusTab(key: 'accepted', label: 'Accepted', icon: Icons.verified_user_outlined),
+    _StatusTab(key: 'paused', label: 'Paused', icon: Icons.pause_circle_outline_rounded),
     _StatusTab(key: 'completed', label: 'Completed', icon: Icons.done_all_outlined),
     _StatusTab(key: 'rejected', label: 'Rejected', icon: Icons.highlight_off_outlined),
   ];
+
+  final Set<String> _reachedLocationBookingIds = <String>{};
 
   final Map<String, _StatusStyle> _statusStyle = const {
     'pending': _StatusStyle(bg: Color(0xFFFFF7E8), fg: Color(0xFFB45309), border: Color(0xFFFCD9A5), label: 'Pending Approval', icon: Icons.hourglass_empty_outlined),
     'assigned': _StatusStyle(bg: Color(0xFFEFF6FF), fg: Color(0xFF1D4ED8), border: Color(0xFFBFDBFE), label: 'Assigned', icon: Icons.assignment_ind_outlined),
     'accepted': _StatusStyle(bg: Color(0xFFECFEFF), fg: Color(0xFF0E7490), border: Color(0xFFBAE6FD), label: 'Accepted', icon: Icons.verified_user_outlined),
     'in_progress': _StatusStyle(bg: Color(0xFFEEF2FF), fg: Color(0xFF4338CA), border: Color(0xFFC7D2FE), label: 'In Progress', icon: Icons.play_arrow_rounded),
+    'paused': _StatusStyle(bg: Color(0xFFFFF7ED), fg: Color(0xFFC2410C), border: Color(0xFFFED7AA), label: 'Paused', icon: Icons.pause_circle_outline_rounded),
     'otp_sent': _StatusStyle(bg: Color(0xFFFEF3C7), fg: Color(0xFF92400E), border: Color(0xFFFDE68A), label: 'OTP Sent', icon: Icons.task_alt_outlined),
     'completed': _StatusStyle(bg: Color(0xFFECFDF3), fg: Color(0xFF15803D), border: Color(0xFFBBF7D0), label: 'Completed', icon: Icons.done_all_outlined),
     'rejected': _StatusStyle(bg: Color(0xFFFEF2F2), fg: Color(0xFFB91C1C), border: Color(0xFFFECACA), label: 'Rejected', icon: Icons.highlight_off_outlined),
@@ -52,9 +57,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
     _loadBookings();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      setState(() {
-        _timerTick++;
-      });
+      setState(() {});
     });
   }
 
@@ -80,18 +83,24 @@ class _BookingsScreenState extends State<BookingsScreen> {
       if (!mounted) return;
       setState(() {
         _bookings = data;
+        _reachedLocationBookingIds.removeWhere(
+          (bookingId) => !_bookings.any(
+            (booking) => booking.id == bookingId && booking.status.trim().toLowerCase() == 'accepted',
+          ),
+        );
       });
-    } catch (_err) {
+    } catch (err) {
       if (!mounted) return;
       setState(() {
         _error = 'Failed to fetch bookings';
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _refreshing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _refreshing = false;
+        });
+      }
     }
   }
 
@@ -100,6 +109,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
     required Future<void> Function() action,
     required String successText,
     required String fallbackError,
+    Future<void> Function()? onSuccess,
   }) async {
     setState(() {
       _actionBookingId = bookingId;
@@ -114,16 +124,43 @@ class _BookingsScreenState extends State<BookingsScreen> {
         _message = successText;
       });
       await _loadBookings(silent: true);
-    } catch (_err) {
+      if (onSuccess != null) {
+        await onSuccess();
+      }
+    } catch (err) {
       if (!mounted) return;
       setState(() {
-        _error = fallbackError;
+        _error = _resolveError(err, fallbackError);
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _actionBookingId = '';
-      });
+      if (mounted) {
+        setState(() {
+          _actionBookingId = '';
+        });
+      }
+    }
+  }
+
+  String _resolveError(Object err, String fallback) {
+    if (err is ApiClientException && err.message.isNotEmpty) {
+      return err.message;
+    }
+    return fallback;
+  }
+
+  Future<void> _openWorkflowDialog(BookingItem booking) async {
+    final workflowBookingId = booking.backendId.isEmpty ? booking.id : booking.backendId;
+    final updated = await showDialog<bool>(
+      context: context,
+      builder: (_) => ServiceWorkflowDialog(
+        bookingId: workflowBookingId,
+        bookingCode: booking.id,
+        bookingService: _bookingService,
+      ),
+    );
+
+    if (updated == true) {
+      await _loadBookings(silent: true);
     }
   }
 
@@ -137,14 +174,29 @@ class _BookingsScreenState extends State<BookingsScreen> {
     return 'Rs ${value.toStringAsFixed(0)}';
   }
 
-  String _formatDuration(DateTime? startTime) {
+  String _formatServiceDuration(BookingItem booking) {
+    final startTime = booking.serviceStartTime;
     if (startTime == null) return '00:00:00';
-    final elapsed = DateTime.now().difference(startTime).inSeconds;
-    final total = elapsed < 0 ? 0 : elapsed;
-    final h = (total ~/ 3600).toString().padLeft(2, '0');
-    final m = ((total % 3600) ~/ 60).toString().padLeft(2, '0');
-    final s = (total % 60).toString().padLeft(2, '0');
+
+    var totalSeconds = DateTime.now().difference(startTime).inSeconds - booking.pausedDurationSeconds;
+    if (booking.status.trim().toLowerCase() == 'paused' && booking.pauseStartedAt != null) {
+      totalSeconds -= DateTime.now().difference(booking.pauseStartedAt!).inSeconds;
+    }
+
+    if (totalSeconds < 0) totalSeconds = 0;
+
+    final h = (totalSeconds ~/ 3600).toString().padLeft(2, '0');
+    final m = ((totalSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final s = (totalSeconds % 60).toString().padLeft(2, '0');
     return '$h:$m:$s';
+  }
+
+  void _markReachedLocation(String bookingId) {
+    setState(() {
+      _reachedLocationBookingIds.add(bookingId);
+      _message = 'Reached location marked. Click Start Service to continue the workflow.';
+      _error = null;
+    });
   }
 
   List<BookingItem> _visibleBookings() {
@@ -226,13 +278,18 @@ class _BookingsScreenState extends State<BookingsScreen> {
   }
 
   Widget _bookingCard(BookingItem booking) {
+    final actionBookingId = booking.backendId.isEmpty ? booking.id : booking.backendId;
     final status = booking.status.trim().toLowerCase();
     final canAcceptReject = status == 'assigned';
+    final hasReachedLocation = _reachedLocationBookingIds.contains(booking.id);
     final showAcceptButton = status == 'assigned' || status == 'accepted';
     final acceptDisabled = status == 'accepted' || _actionBookingId.isNotEmpty;
-    final canStart = status == 'accepted';
+    final canStart = status == 'accepted' && hasReachedLocation;
+    final showReachedLocation = status == 'accepted';
+    final canPause = status == 'in_progress';
+    final canResume = status == 'paused';
     final canContinueFlow = status == 'in_progress' || status == 'otp_sent';
-    final actionLoading = _actionBookingId == booking.id;
+    final actionLoading = _actionBookingId == actionBookingId;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -307,7 +364,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
                 if (canContinueFlow) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Timer: ${_formatDuration(booking.serviceStartTime)}',
+                    'Timer: ${_formatServiceDuration(booking)}',
                     style: const TextStyle(color: Color(0xFF1D4ED8), fontWeight: FontWeight.w800),
                   ),
                 ],
@@ -327,13 +384,25 @@ class _BookingsScreenState extends State<BookingsScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    if (showReachedLocation)
+                      ElevatedButton.icon(
+                        onPressed: hasReachedLocation || _actionBookingId.isNotEmpty
+                            ? null
+                            : () => _markReachedLocation(booking.id),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: hasReachedLocation ? const Color(0xFFFEF3C7) : const Color(0xFFF59E0B),
+                          foregroundColor: hasReachedLocation ? const Color(0xFFA16207) : Colors.white,
+                        ),
+                        icon: const Icon(Icons.room_outlined, size: 18),
+                        label: Text(hasReachedLocation ? 'Reached Location' : 'Mark Reached Location'),
+                      ),
                     if (showAcceptButton)
                       ElevatedButton.icon(
                         onPressed: acceptDisabled
                             ? null
                             : () => _runAction(
-                                  bookingId: booking.id,
-                                  action: () => _bookingService.acceptBooking(booking.id),
+                                  bookingId: actionBookingId,
+                                  action: () => _bookingService.acceptBooking(actionBookingId),
                                   successText: 'Booking accepted',
                                   fallbackError: 'Failed to accept booking',
                                 ),
@@ -347,8 +416,8 @@ class _BookingsScreenState extends State<BookingsScreen> {
                         onPressed: _actionBookingId.isNotEmpty
                             ? null
                             : () => _runAction(
-                                  bookingId: booking.id,
-                                  action: () => _bookingService.rejectBooking(booking.id),
+                                  bookingId: actionBookingId,
+                                  action: () => _bookingService.rejectBooking(actionBookingId),
                                   successText: 'Booking rejected',
                                   fallbackError: 'Failed to reject booking',
                                 ),
@@ -363,10 +432,11 @@ class _BookingsScreenState extends State<BookingsScreen> {
                         onPressed: _actionBookingId.isNotEmpty
                             ? null
                             : () => _runAction(
-                                  bookingId: booking.id,
-                                  action: () => _bookingService.startService(booking.id),
+                                  bookingId: actionBookingId,
+                                  action: () => _bookingService.startService(actionBookingId),
                                   successText: 'Service started',
                                   fallbackError: 'Failed to start service',
+                                  onSuccess: () => _openWorkflowDialog(booking),
                                 ),
                         style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0EA5E9)),
                         icon: actionLoading
@@ -374,13 +444,41 @@ class _BookingsScreenState extends State<BookingsScreen> {
                             : const Icon(Icons.play_arrow_rounded, size: 18),
                         label: const Text('Start Service'),
                       ),
+                    if (canPause)
+                      ElevatedButton.icon(
+                        onPressed: _actionBookingId.isNotEmpty
+                            ? null
+                            : () => _runAction(
+                                  bookingId: actionBookingId,
+                                  action: () => _bookingService.pauseService(actionBookingId),
+                                  successText: 'Service paused',
+                                  fallbackError: 'Failed to pause service',
+                                ),
+                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEA580C)),
+                        icon: actionLoading
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.pause_circle_outline_rounded, size: 18),
+                        label: const Text('Pause Service'),
+                      ),
+                    if (canResume)
+                      ElevatedButton.icon(
+                        onPressed: _actionBookingId.isNotEmpty
+                            ? null
+                            : () => _runAction(
+                                  bookingId: actionBookingId,
+                                  action: () => _bookingService.resumeService(actionBookingId),
+                                  successText: 'Service resumed',
+                                  fallbackError: 'Failed to resume service',
+                                ),
+                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                        icon: actionLoading
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.play_arrow_rounded, size: 18),
+                        label: const Text('Resume Service'),
+                      ),
                     if (canContinueFlow)
                       ElevatedButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _message = 'Continue workflow for ${booking.id} from Service Steps page.';
-                          });
-                        },
+                        onPressed: () => _openWorkflowDialog(booking),
                         style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4338CA)),
                         icon: const Icon(Icons.task_alt_outlined, size: 18),
                         label: const Text('Continue Workflow'),
@@ -438,6 +536,8 @@ class _BookingsScreenState extends State<BookingsScreen> {
                 Text('Schedule: ${_formatDateTime(booking.scheduledAt)}'),
                 Text('Address: ${booking.address}'),
                 Text('Notes: ${booking.notes.isEmpty ? 'No notes provided' : booking.notes}'),
+                Text('Current Status: ${_statusStyle[status]?.label ?? 'Unknown'}'),
+                Text('Timer: ${_formatServiceDuration(booking)}'),
                 const SizedBox(height: 12),
                 const Divider(),
                 const SizedBox(height: 8),
@@ -545,7 +645,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: DropdownButtonFormField<String>(
-              value: _activeTab,
+              initialValue: _activeTab,
               items: _buildStatusFilterItems(tabCounts),
               onChanged: (value) {
                 if (value == null) return;

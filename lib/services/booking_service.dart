@@ -1,6 +1,5 @@
-import 'package:intl/intl.dart';
-
 import '../models/booking_item.dart';
+import '../models/service_workflow.dart';
 import 'api_client.dart';
 
 class BookingService {
@@ -30,6 +29,38 @@ class BookingService {
     await ApiClient.instance.patch('/bookings/$bookingId/start');
   }
 
+  Future<void> pauseService(String bookingId) async {
+    await ApiClient.instance.patch('/bookings/$bookingId/pause');
+  }
+
+  Future<void> resumeService(String bookingId) async {
+    await ApiClient.instance.patch('/bookings/$bookingId/resume');
+  }
+
+  Future<ServiceWorkflowData> fetchServiceSteps(String bookingId) async {
+    final response = await ApiClient.instance.get('/bookings/$bookingId/steps');
+    return _parseServiceWorkflow(response);
+  }
+
+  Future<void> completeServiceStep(String bookingId, int stepOrder) async {
+    await ApiClient.instance.patch(
+      '/bookings/$bookingId/steps',
+      body: {'stepOrder': stepOrder},
+    );
+  }
+
+  Future<String> sendCompletionOtp(String bookingId) async {
+    final response = await ApiClient.instance.post('/bookings/$bookingId/request-otp');
+    return response['otp']?.toString() ?? '';
+  }
+
+  Future<void> verifyCompletionOtp(String bookingId, String otp) async {
+    await ApiClient.instance.post(
+      '/bookings/$bookingId/verify-otp',
+      body: {'otp': otp},
+    );
+  }
+
   BookingItem _parseBooking(Map<String, dynamic> data) {
     final scheduledDate = data['scheduledDate'];
     final createdDate = data['createdAt'];
@@ -37,8 +68,10 @@ class BookingService {
     final serviceId = data['serviceId'];
     final userId = data['userId'];
     final pricing = data['pricing'];
+    final pauseStartedAt = _parseDate(data['pauseStartedAt']);
 
     return BookingItem(
+      backendId: data['_id']?.toString() ?? '',
       id: data['bookingId']?.toString() ?? 'N/A',
       serviceName: _readServiceName(data, serviceId),
       customerName: _readCustomerName(data, userId),
@@ -55,6 +88,8 @@ class BookingService {
       createdAt: _parseDate(createdDate) ?? DateTime.now(),
       serviceStartTime: _parseDate(startDate),
       serviceEndTime: null,
+      pausedDurationSeconds: (data['pausedDurationSeconds'] as num?)?.toInt() ?? 0,
+      pauseStartedAt: pauseStartedAt,
     );
   }
 
@@ -210,5 +245,55 @@ class BookingService {
       'rejected' || 'cancelled' => ['Assigned', 'Rejected'],
       _ => ['Assigned', 'Accepted', 'Started', 'Completed'],
     };
+  }
+
+  ServiceWorkflowData _parseServiceWorkflow(Map<String, dynamic> response) {
+    final rawSteps = response['steps'] as List? ?? const [];
+    final stepMaps = <Map<String, dynamic>>[];
+    for (var i = 0; i < rawSteps.length; i++) {
+      final value = rawSteps[i];
+      if (value is Map) {
+        stepMaps.add(Map<String, dynamic>.from(value));
+      } else if (value is String && value.isNotEmpty) {
+        stepMaps.add({'order': i + 1, 'title': value, 'description': ''});
+      }
+    }
+
+    int readOrder(Map<String, dynamic> map, int index) {
+      final orderValue = map['order'];
+      if (orderValue is num) return orderValue.toInt();
+      if (orderValue is String) return int.tryParse(orderValue) ?? index + 1;
+      return index + 1;
+    }
+
+    stepMaps.sort((a, b) => readOrder(a, 0).compareTo(readOrder(b, 0)));
+
+    final steps = <ServiceWorkflowStep>[];
+    for (var i = 0; i < stepMaps.length; i++) {
+      steps.add(ServiceWorkflowStep.fromMap(stepMaps[i], i));
+    }
+
+    final completed = <int>[];
+    for (final value in (response['completedSteps'] as List? ?? const [])) {
+      if (value is num) {
+        completed.add(value.toInt());
+      } else if (value is String) {
+        final parsed = int.tryParse(value);
+        if (parsed != null) {
+          completed.add(parsed);
+        }
+      }
+    }
+    completed.sort();
+
+    return ServiceWorkflowData(
+      steps: steps,
+      completedSteps: completed,
+      status: _normalizeStatus(response['status']?.toString() ?? 'in_progress'),
+      serviceStartTime: _parseDate(response['serviceStartTime']),
+      pausedDurationSeconds: (response['pausedDurationSeconds'] as num?)?.toInt() ?? 0,
+      pauseStartedAt: _parseDate(response['pauseStartedAt']),
+      serviceDurationMinutes: (response['serviceDuration'] as num?)?.toInt() ?? 0,
+    );
   }
 }

@@ -6,6 +6,7 @@ import '../bookings_screen.dart';
 import '../dashboard_screen.dart';
 import '../help_screen.dart';
 import '../notifications_screen.dart';
+import '../products_screen.dart';
 import '../profile_screen.dart';
 import '../settings_screen.dart';
 import '../skills_screen.dart';
@@ -43,6 +44,11 @@ class _ProviderShellState extends State<ProviderShell> {
       label: 'Bookings',
       icon: Icons.assignment_outlined,
       screen: BookingsScreen(),
+    ),
+    _ShellDestination(
+      label: 'Products',
+      icon: Icons.inventory_2_outlined,
+      screen: ProductsScreen(),
     ),
     _ShellDestination(
       label: 'Profile',

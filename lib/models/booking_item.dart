@@ -1,5 +1,6 @@
 class BookingItem {
   const BookingItem({
+    required this.backendId,
     required this.id,
     required this.serviceName,
     required this.customerName,
@@ -16,8 +17,11 @@ class BookingItem {
     this.createdAt,
     this.serviceStartTime,
     this.serviceEndTime,
+    this.pausedDurationSeconds = 0,
+    this.pauseStartedAt,
   });
 
+  final String backendId;
   final String id;
   final String serviceName;
   final String customerName;
@@ -34,8 +38,11 @@ class BookingItem {
   final DateTime? createdAt;
   final DateTime? serviceStartTime;
   final DateTime? serviceEndTime;
+  final int pausedDurationSeconds;
+  final DateTime? pauseStartedAt;
 
   BookingItem copyWith({
+    String? backendId,
     String? id,
     String? serviceName,
     String? customerName,
@@ -52,8 +59,11 @@ class BookingItem {
     DateTime? createdAt,
     DateTime? serviceStartTime,
     DateTime? serviceEndTime,
+    int? pausedDurationSeconds,
+    DateTime? pauseStartedAt,
   }) {
     return BookingItem(
+      backendId: backendId ?? this.backendId,
       id: id ?? this.id,
       serviceName: serviceName ?? this.serviceName,
       customerName: customerName ?? this.customerName,
@@ -70,6 +80,8 @@ class BookingItem {
       createdAt: createdAt ?? this.createdAt,
       serviceStartTime: serviceStartTime ?? this.serviceStartTime,
       serviceEndTime: serviceEndTime ?? this.serviceEndTime,
+      pausedDurationSeconds: pausedDurationSeconds ?? this.pausedDurationSeconds,
+      pauseStartedAt: pauseStartedAt ?? this.pauseStartedAt,
     );
   }
 
