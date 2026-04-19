@@ -49,6 +49,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  Future<void> _refreshDashboard() async {
+    setState(() {
+      _dashboardFuture = _loadDashboard();
+    });
+    await _dashboardFuture;
+  }
+
   String _formatMoney(double amount) {
     final full = amount.toStringAsFixed(0);
     final withCommas = full.replaceAllMapped(
@@ -66,43 +73,158 @@ class _DashboardScreenState extends State<DashboardScreen> {
     };
   }
 
-  Widget _metricCard({
-    required BuildContext context,
-    required String title,
-    required String value,
-    required String delta,
-    required Color iconBg,
-    required Color iconColor,
-    required IconData icon,
-  }) {
+  String _percentLabel(int value, int total) {
+    if (total <= 0) return '0%';
+    final percent = (value * 100) / total;
+    return '${percent.toStringAsFixed(1)}%';
+  }
+
+  String _doubleLabel(double value) {
+    if (value.isNaN || value.isInfinite) return '0.0';
+    return value.toStringAsFixed(1);
+  }
+
+  String _initials(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return 'SP';
+    final parts = trimmed.split(RegExp(r'\s+'));
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'.toUpperCase();
+  }
+
+  Widget _emptyState({required String message}) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget _analyticsStat({
+    required String label,
+    required String value,
+    Color accent = const Color(0xFF0F766E),
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(height: 12),
-          Text(title, style: const TextStyle(color: Color(0xFF64748B), fontSize: 13.5)),
-          const SizedBox(height: 8),
+          Text(label, style: const TextStyle(color: Color(0xFF64748B), fontSize: 12.5)),
+          const SizedBox(height: 4),
           Text(
             value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16.5, color: accent),
           ),
-          const SizedBox(height: 6),
-          Text(delta, style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.w700, fontSize: 12.5)),
+        ],
+      ),
+    );
+  }
+
+  int _gridColumns({
+    required double width,
+    required int maxColumns,
+  }) {
+    if (width < 560) return 1;
+    if (width < 900) return maxColumns >= 2 ? 2 : 1;
+    if (width < 1240) return maxColumns >= 3 ? 3 : maxColumns;
+    if (width < 1520) return maxColumns >= 4 ? 4 : maxColumns;
+    return maxColumns;
+  }
+
+  double _gridItemWidth({
+    required double width,
+    required int columns,
+    required double spacing,
+  }) {
+    final totalSpacing = spacing * (columns - 1);
+    return (width - totalSpacing) / columns;
+  }
+
+  Widget _metricCard({
+    required String title,
+    required String value,
+    required String insight,
+    required Color iconBg,
+    required Color iconColor,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0C0F172A),
+            blurRadius: 20,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(color: Color(0xFF64748B), fontSize: 13.5, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 28,
+              height: 1.0,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFD1FAE5)),
+            ),
+            child: Text(
+              insight,
+              style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.w700, fontSize: 12),
+            ),
+          ),
         ],
       ),
     );
@@ -112,6 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String title,
     required String subtitle,
     required Widget child,
+    IconData? icon,
     Widget? trailing,
   }) {
     return Container(
@@ -120,12 +243,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x080F172A),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              if (icon != null) ...[
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF8F4),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 18, color: const Color(0xFF0F8F7B)),
+                ),
+                const SizedBox(width: 10),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -146,152 +288,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child,
         ],
       ),
-    );
-  }
-
-  Widget _earningsTrendPanel(List<EarningsTrendPoint> trend) {
-    if (trend.isEmpty) {
-      return const SizedBox(height: 190, child: Center(child: Text('No data available')));
-    }
-
-    final maxValue = trend.map((item) => item.value).reduce((a, b) => a > b ? a : b);
-
-    return SizedBox(
-      height: 220,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          const topValueHeight = 18.0;
-          const labelHeight = 18.0;
-          const jobsHeight = 16.0;
-          const verticalSpacing = 16.0;
-          const minBarHeight = 24.0;
-
-          final maxBarHeight = (constraints.maxHeight -
-                  topValueHeight -
-                  labelHeight -
-                  jobsHeight -
-                  verticalSpacing)
-              .clamp(48.0, 150.0)
-              .toDouble();
-
-          final itemWidth = trend.length > 5 ? 78.0 : constraints.maxWidth / trend.length;
-
-          return Scrollbar(
-            thumbVisibility: trend.length > 5,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: trend.map((point) {
-                  final ratio = maxValue <= 0 ? 0.0 : point.value / maxValue;
-                  final barHeight =
-                      (minBarHeight + (ratio * (maxBarHeight - minBarHeight))).clamp(minBarHeight, maxBarHeight);
-
-                  return SizedBox(
-                    width: itemWidth,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          SizedBox(
-                            height: topValueHeight,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                _formatMoney(point.value),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            height: barHeight,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF12D3B5), Color(0xFF0F766E)],
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            height: labelHeight,
-                            child: Text(
-                              point.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
-                            ),
-                          ),
-                          SizedBox(
-                            height: jobsHeight,
-                            child: Text(
-                              '${point.bookings} jobs',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _bookingStatusPanel(List<BookingStatusEntry> status) {
-    final maxCount = status.isEmpty ? 1 : status.map((item) => item.value).reduce((a, b) => a > b ? a : b);
-
-    return Column(
-      children: status.map((item) {
-        final ratio = item.value / maxCount;
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 14),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 84,
-                child: Text(
-                  item.label,
-                  style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF334155)),
-                ),
-              ),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LinearProgressIndicator(
-                    value: ratio,
-                    minHeight: 10,
-                    backgroundColor: const Color(0xFFE2E8F0),
-                    valueColor: AlwaysStoppedAnimation(Color(item.color)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: 34,
-                child: Text(
-                  '${item.value}',
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
     );
   }
 
@@ -345,11 +341,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final summary = dashboard.summary;
         final profile = snapshot.data!.profile;
 
+        final totalBookings = summary.totalBookings;
+        final completionRate = _percentLabel(summary.completedJobs, totalBookings);
+        final cancellationRate = _percentLabel(summary.cancelledJobs, totalBookings);
+        final rejectedCount = dashboard.bookingStatus
+          .where((entry) => entry.label.toLowerCase() == 'rejected')
+          .fold<int>(0, (sum, entry) => sum + entry.value);
+        final rejectedRate = _percentLabel(rejectedCount, totalBookings);
+        final avgTicket = summary.completedJobs <= 0 ? 0.0 : summary.totalEarnings / summary.completedJobs;
+
+        final topService = dashboard.serviceAnalytics.isEmpty
+            ? null
+            : (List<ServiceAnalyticsEntry>.from(dashboard.serviceAnalytics)
+                  ..sort((a, b) => b.revenue.compareTo(a.revenue)))
+                .first;
+
+        final topArea = dashboard.locationAnalytics.isEmpty
+            ? null
+            : (List<LocationAnalyticsEntry>.from(dashboard.locationAnalytics)
+                  ..sort((a, b) => b.revenue.compareTo(a.revenue)))
+                .first;
+
         final metricItems = [
           _MetricItem(
             title: 'Total Bookings',
             value: '${summary.totalBookings}',
-            delta: '+12%',
+            insight: '${summary.pendingBookings} pending',
             icon: Icons.calendar_month_outlined,
             iconBg: const Color(0xFFD9F7EE),
             iconColor: const Color(0xFF138B52),
@@ -357,61 +374,146 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _MetricItem(
             title: 'Completed',
             value: '${summary.completedJobs}',
-            delta: '+8%',
+            insight: '$completionRate completion rate',
             icon: Icons.check_circle_outline,
             iconBg: const Color(0xFFE6F6ED),
             iconColor: const Color(0xFF23935A),
           ),
           _MetricItem(
-            title: 'Cancelled',
-            value: '${summary.cancelledJobs}',
-            delta: '-5%',
-            icon: Icons.cancel_outlined,
-            iconBg: const Color(0xFFFFF2E5),
-            iconColor: const Color(0xFFD58C1F),
+            title: 'Rejected Bookings',
+            value: '$rejectedCount',
+            insight: '$rejectedRate rejection rate',
+            icon: Icons.block_outlined,
+            iconBg: const Color(0xFFFEE2E2),
+            iconColor: const Color(0xFFB91C1C),
           ),
           _MetricItem(
             title: 'Total Earnings',
             value: _formatMoney(summary.totalEarnings),
-            delta: '+15%',
+            insight: '${_formatMoney(summary.todayEarnings)} today',
             icon: Icons.currency_rupee,
             iconBg: const Color(0xFFE8F5F2),
             iconColor: const Color(0xFF13785D),
           ),
-          _MetricItem(
-            title: "Today's Earnings",
-            value: _formatMoney(summary.todayEarnings),
-            delta: '${summary.pendingBookings} pending',
-            icon: Icons.trending_up,
-            iconBg: const Color(0xFFEEF4FF),
-            iconColor: const Color(0xFF4576C9),
-          ),
         ];
 
         return LayoutBuilder(
-          builder: (context, _pageConstraints) => Scrollbar(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Dashboard', style: Theme.of(context).textTheme.headlineMedium),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Welcome back ${profile.name}. Here is your performance overview.',
-                    style: const TextStyle(color: Color(0xFF6B7280)),
+          builder: (context, _pageConstraints) => RefreshIndicator(
+            onRefresh: _refreshDashboard,
+            child: Scrollbar(
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0F172A), Color(0xFF153145), Color(0xFF0F766E)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 760;
+
+                        final left = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Performance Dashboard',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 28,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Welcome back ${profile.name}. Here is your live business overview.',
+                              style: const TextStyle(color: Color(0xFFD1FAF5), fontSize: 14.5),
+                            ),
+                          ],
+                        );
+
+                        final right = Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0x1FFFFFFF),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0x44FFFFFF)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(
+                                radius: 16,
+                                backgroundColor: const Color(0xFF12B5A4),
+                                child: Text(
+                                  _initials(profile.name),
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _periodLabel(_selectedPeriod),
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                                  ),
+                                  Text(
+                                    'Rating ${summary.rating.toStringAsFixed(1)}',
+                                    style: const TextStyle(color: Color(0xFFCCFBF1), fontSize: 12.5),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (compact) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              left,
+                              const SizedBox(height: 14),
+                              right,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(child: left),
+                            const SizedBox(width: 12),
+                            right,
+                          ],
+                        );
+                      },
+                    ),
                   ),
                   const SizedBox(height: 14),
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final dropdown = SizedBox(
-                        width: constraints.maxWidth >= 720 ? 240 : double.infinity,
+                      final dropdown = ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minWidth: constraints.maxWidth >= 720 ? 220 : constraints.maxWidth,
+                          maxWidth: constraints.maxWidth >= 720 ? 280 : constraints.maxWidth,
+                        ),
                         child: DropdownButtonFormField<DashboardPeriod>(
                           value: _selectedPeriod,
+                          isExpanded: true,
                           decoration: InputDecoration(
-                            labelText: 'Period',
+                            labelText: 'Dashboard Period',
                             prefixIcon: const Icon(Icons.filter_alt_outlined),
                             filled: true,
                             fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: const BorderSide(color: Color(0xFFD7E2EA)),
@@ -446,24 +548,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 20),
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final cardWidth = constraints.maxWidth >= 1200
-                          ? (constraints.maxWidth - 64) / 5
-                          : constraints.maxWidth >= 900
-                              ? (constraints.maxWidth - 32) / 3
-                              : (constraints.maxWidth - 16) / 2;
+                      const spacing = 16.0;
+                      final columns = _gridColumns(width: constraints.maxWidth, maxColumns: 4);
+                      final cardWidth = _gridItemWidth(
+                        width: constraints.maxWidth,
+                        columns: columns,
+                        spacing: spacing,
+                      );
 
                       return Wrap(
-                        spacing: 16,
-                        runSpacing: 16,
+                        spacing: spacing,
+                        runSpacing: spacing,
                         children: metricItems
                             .map(
                               (item) => SizedBox(
                                 width: cardWidth,
                                 child: _metricCard(
-                                  context: context,
                                   title: item.title,
                                   value: item.value,
-                                  delta: item.delta,
+                                  insight: item.insight,
                                   iconBg: item.iconBg,
                                   iconColor: item.iconColor,
                                   icon: item.icon,
@@ -477,82 +580,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 24),
                   LayoutBuilder(
                     builder: (context, sectionConstraints) {
-                      final isTwoColumn = sectionConstraints.maxWidth >= 980;
-                      final panelWidth = isTwoColumn
-                          ? (sectionConstraints.maxWidth - 16) / 2
-                          : sectionConstraints.maxWidth;
-
-                      return Wrap(
-                        spacing: 16,
-                        runSpacing: 16,
-                        children: [
-                          SizedBox(
-                            width: panelWidth,
-                            child: _panel(
-                              title: 'Earnings Trend',
-                              subtitle: 'Daily earnings - ${_periodLabel(_selectedPeriod)}',
-                              child: _earningsTrendPanel(dashboard.earningsTrend),
-                            ),
-                          ),
-                          SizedBox(
-                            width: panelWidth,
-                            child: _panel(
-                              title: 'Booking Status',
-                              subtitle: 'Distribution of booking outcomes',
-                              child: _bookingStatusPanel(dashboard.bookingStatus),
-                            ),
-                          ),
-                        ],
+                      const spacing = 16.0;
+                      final columns = _gridColumns(width: sectionConstraints.maxWidth, maxColumns: 2);
+                      final panelWidth = _gridItemWidth(
+                        width: sectionConstraints.maxWidth,
+                        columns: columns,
+                        spacing: spacing,
                       );
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (context, sectionConstraints) {
-                      final isTwoColumn = sectionConstraints.maxWidth >= 980;
-                      final panelWidth = isTwoColumn
-                          ? (sectionConstraints.maxWidth - 16) / 2
-                          : sectionConstraints.maxWidth;
 
                       return Wrap(
-                        spacing: 16,
-                        runSpacing: 16,
+                        spacing: spacing,
+                        runSpacing: spacing,
                         children: [
                           SizedBox(
                             width: panelWidth,
                             child: _panel(
                               title: 'Service Analytics',
                               subtitle: 'Performance by service type',
-                              child: Scrollbar(
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: DataTable(
-                                    columns: const [
-                                      DataColumn(label: Text('Service')),
-                                      DataColumn(label: Text('Bookings')),
-                                      DataColumn(label: Text('Revenue')),
-                                      DataColumn(label: Text('Rating')),
-                                    ],
-                                    rows: dashboard.serviceAnalytics
-                                        .map(
-                                          (row) => DataRow(
-                                            cells: [
-                                              DataCell(Text(row.service)),
-                                              DataCell(Text('${row.bookings}')),
-                                              DataCell(Text(_formatMoney(row.revenue))),
-                                              DataCell(Row(
-                                                children: [
-                                                  const Icon(Icons.star_rounded, size: 16, color: Color(0xFFF0AD29)),
-                                                  const SizedBox(width: 4),
-                                                  Text(row.rating.toStringAsFixed(1)),
-                                                ],
-                                              )),
-                                            ],
-                                          ),
-                                        )
-                                        .toList(),
-                                  ),
-                                ),
+                              icon: Icons.handyman_outlined,
+                              child: LayoutBuilder(
+                                builder: (context, tableConstraints) {
+                                  if (dashboard.serviceAnalytics.isEmpty) {
+                                    return _emptyState(message: 'No service analytics available for the selected period.');
+                                  }
+
+                                  return Scrollbar(
+                                    child: SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          minWidth: tableConstraints.maxWidth,
+                                        ),
+                                        child: DataTable(
+                                          columns: const [
+                                            DataColumn(label: Text('Service')),
+                                            DataColumn(label: Text('Bookings')),
+                                            DataColumn(label: Text('Revenue')),
+                                            DataColumn(label: Text('Rating')),
+                                          ],
+                                          rows: dashboard.serviceAnalytics
+                                              .map(
+                                                (row) => DataRow(
+                                                  cells: [
+                                                    DataCell(Text(row.service)),
+                                                    DataCell(Text('${row.bookings}')),
+                                                    DataCell(Text(_formatMoney(row.revenue))),
+                                                    DataCell(Row(
+                                                      children: [
+                                                        const Icon(Icons.star_rounded, size: 16, color: Color(0xFFF0AD29)),
+                                                        const SizedBox(width: 4),
+                                                        Text(row.rating.toStringAsFixed(1)),
+                                                      ],
+                                                    )),
+                                                  ],
+                                                ),
+                                              )
+                                              .toList(),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ),
@@ -561,28 +649,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             child: _panel(
                               title: 'Location Analytics',
                               subtitle: 'Top performing areas',
-                              child: Scrollbar(
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: DataTable(
-                                    columns: const [
-                                      DataColumn(label: Text('Area')),
-                                      DataColumn(label: Text('Bookings')),
-                                      DataColumn(label: Text('Revenue')),
-                                    ],
-                                    rows: dashboard.locationAnalytics
-                                        .map(
-                                          (row) => DataRow(
-                                            cells: [
-                                              DataCell(Text(row.area)),
-                                              DataCell(Text('${row.bookings}')),
-                                              DataCell(Text(_formatMoney(row.revenue))),
-                                            ],
-                                          ),
-                                        )
-                                        .toList(),
-                                  ),
-                                ),
+                              icon: Icons.location_on_outlined,
+                              child: LayoutBuilder(
+                                builder: (context, tableConstraints) {
+                                  if (dashboard.locationAnalytics.isEmpty) {
+                                    return _emptyState(message: 'No location analytics available for the selected period.');
+                                  }
+
+                                  return Scrollbar(
+                                    child: SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          minWidth: tableConstraints.maxWidth,
+                                        ),
+                                        child: DataTable(
+                                          columns: const [
+                                            DataColumn(label: Text('Area')),
+                                            DataColumn(label: Text('Bookings')),
+                                            DataColumn(label: Text('Revenue')),
+                                          ],
+                                          rows: dashboard.locationAnalytics
+                                              .map(
+                                                (row) => DataRow(
+                                                  cells: [
+                                                    DataCell(Text(row.area)),
+                                                    DataCell(Text('${row.bookings}')),
+                                                    DataCell(Text(_formatMoney(row.revenue))),
+                                                  ],
+                                                ),
+                                              )
+                                              .toList(),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ),
@@ -592,34 +694,118 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 16),
                   _panel(
+                    title: 'Live Analytics Snapshot',
+                    subtitle: 'Real-time insights from your current backend data',
+                    icon: Icons.auto_graph_outlined,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        const spacing = 10.0;
+                        final columns = constraints.maxWidth >= 980
+                            ? 4
+                            : constraints.maxWidth >= 620
+                                ? 2
+                                : 1;
+                        final itemWidth = _gridItemWidth(
+                          width: constraints.maxWidth,
+                          columns: columns,
+                          spacing: spacing,
+                        );
+
+                        return Wrap(
+                          spacing: spacing,
+                          runSpacing: spacing,
+                          children: [
+                            SizedBox(
+                              width: itemWidth,
+                              child: _analyticsStat(label: 'Completion Rate', value: completionRate),
+                            ),
+                            SizedBox(
+                              width: itemWidth,
+                              child: _analyticsStat(label: 'Cancellation Rate', value: cancellationRate),
+                            ),
+                            SizedBox(
+                              width: itemWidth,
+                              child: _analyticsStat(
+                                label: 'Avg Ticket Value',
+                                value: _formatMoney(avgTicket),
+                                accent: const Color(0xFF1D4ED8),
+                              ),
+                            ),
+                            SizedBox(
+                              width: itemWidth,
+                              child: _analyticsStat(
+                                label: 'Provider Rating',
+                                value: _doubleLabel(summary.rating),
+                                accent: const Color(0xFFB45309),
+                              ),
+                            ),
+                            if (topService != null)
+                              SizedBox(
+                                width: itemWidth,
+                                child: _analyticsStat(
+                                  label: 'Top Service',
+                                  value: '${topService.service} (${_formatMoney(topService.revenue)})',
+                                  accent: const Color(0xFF0F766E),
+                                ),
+                              ),
+                            if (topArea != null)
+                              SizedBox(
+                                width: itemWidth,
+                                child: _analyticsStat(
+                                  label: 'Top Area',
+                                  value: '${topArea.area} (${_formatMoney(topArea.revenue)})',
+                                  accent: const Color(0xFF7C3AED),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _panel(
                     title: 'Recent Transactions',
                     subtitle: 'Your latest payment transactions',
-                    child: Scrollbar(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-                          columns: const [
-                            DataColumn(label: Text('Booking ID')),
-                            DataColumn(label: Text('Amount')),
-                            DataColumn(label: Text('Date')),
-                            DataColumn(label: Text('Method')),
-                            DataColumn(label: Text('Status')),
-                          ],
-                          rows: dashboard.transactions
-                              .map(
-                                (row) => DataRow(
-                                  cells: [
-                                    DataCell(Text(row.bookingId, style: const TextStyle(fontWeight: FontWeight.w700))),
-                                    DataCell(Text(_formatMoney(row.amount))),
-                                    DataCell(Text(row.date)),
-                                    DataCell(Text(row.method)),
-                                    DataCell(_transactionsStatusChip(row.status)),
-                                  ],
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ),
+                    icon: Icons.receipt_long_outlined,
+                    child: LayoutBuilder(
+                      builder: (context, tableConstraints) {
+                        if (dashboard.transactions.isEmpty) {
+                          return _emptyState(message: 'No recent transactions available.');
+                        }
+
+                        return Scrollbar(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minWidth: tableConstraints.maxWidth,
+                              ),
+                              child: DataTable(
+                                columns: const [
+                                  DataColumn(label: Text('Booking ID')),
+                                  DataColumn(label: Text('Amount')),
+                                  DataColumn(label: Text('Date')),
+                                  DataColumn(label: Text('Method')),
+                                  DataColumn(label: Text('Status')),
+                                ],
+                                rows: dashboard.transactions
+                                    .map(
+                                      (row) => DataRow(
+                                        cells: [
+                                          DataCell(Text(row.bookingId, style: const TextStyle(fontWeight: FontWeight.w700))),
+                                          DataCell(Text(_formatMoney(row.amount))),
+                                          DataCell(Text(row.date)),
+                                          DataCell(Text(row.method)),
+                                          DataCell(_transactionsStatusChip(row.status)),
+                                        ],
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -628,6 +814,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600),
                   ),
                 ],
+                ),
               ),
             ),
           ),
@@ -651,7 +838,7 @@ class _MetricItem {
   const _MetricItem({
     required this.title,
     required this.value,
-    required this.delta,
+    required this.insight,
     required this.icon,
     required this.iconBg,
     required this.iconColor,
@@ -659,7 +846,7 @@ class _MetricItem {
 
   final String title;
   final String value;
-  final String delta;
+  final String insight;
   final IconData icon;
   final Color iconBg;
   final Color iconColor;

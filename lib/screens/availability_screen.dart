@@ -315,30 +315,52 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _TimeField(
-                  label: 'Start',
-                  value: slot.start,
-                  onTap: () => _pickTime(index, true),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _TimeField(
-                  label: 'End',
-                  value: slot.end,
-                  onTap: () => _pickTime(index, false),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 350;
+
+              final startField = _TimeField(
+                label: 'Start',
+                value: slot.start,
+                onTap: () => _pickTime(index, true),
+              );
+
+              final endField = _TimeField(
+                label: 'End',
+                value: slot.end,
+                onTap: () => _pickTime(index, false),
+              );
+
+              final removeButton = IconButton(
                 tooltip: 'Remove slot',
                 onPressed: () => _removeSlot(index),
                 icon: const Icon(Icons.delete_outline),
-              ),
-            ],
+              );
+
+              if (compact) {
+                return Column(
+                  children: [
+                    startField,
+                    const SizedBox(height: 8),
+                    endField,
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: removeButton,
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: startField),
+                  const SizedBox(width: 8),
+                  Expanded(child: endField),
+                  const SizedBox(width: 8),
+                  removeButton,
+                ],
+              );
+            },
           ),
           if (isValid) ...[
             const SizedBox(height: 10),
@@ -375,6 +397,12 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
         final perDayHours = _workingDays.isEmpty ? 0.0 : _weeklyHours / _workingDays.length;
 
         return ListView(
+          padding: EdgeInsets.fromLTRB(
+            MediaQuery.of(context).size.width >= 1100 ? 24 : 12,
+            10,
+            MediaQuery.of(context).size.width >= 1100 ? 24 : 12,
+            14,
+          ),
           children: [
             Container(
               padding: const EdgeInsets.all(18),
@@ -387,26 +415,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                 ),
                 border: Border.all(color: const Color(0xFFBFEDE2)),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Availability Schedule',
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 24),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Manage your working days and available time slots',
-                          style: TextStyle(color: Color(0xFF64748B)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 560;
+                  final weeklyHoursCard = Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: const Color(0xFFDFF7F1),
@@ -425,8 +437,51 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                         ),
                       ],
                     ),
-                  ),
-                ],
+                  );
+
+                  if (compact) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Availability Schedule',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 24),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Manage your working days and available time slots',
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 10),
+                        Align(alignment: Alignment.centerLeft, child: weeklyHoursCard),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Availability Schedule',
+                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 24),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Manage your working days and available time slots',
+                              style: TextStyle(color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      weeklyHoursCard,
+                    ],
+                  );
+                },
               ),
             ),
             if (_message != null) ...[
@@ -604,10 +659,13 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             ),
             if (validSlots.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Card(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 680;
+                  final summaryWidth = compact ? constraints.maxWidth : (constraints.maxWidth - 10) / 2;
+
+                  Widget totalHoursCard() {
+                    return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(14),
                         child: Column(
@@ -627,11 +685,11 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                           ],
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Card(
+                    );
+                  }
+
+                  Widget validSlotsCard() {
+                    return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(14),
                         child: Column(
@@ -651,9 +709,18 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                           ],
                         ),
                       ),
-                    ),
-                  ),
-                ],
+                    );
+                  }
+
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(width: summaryWidth, child: totalHoursCard()),
+                      SizedBox(width: summaryWidth, child: validSlotsCard()),
+                    ],
+                  );
+                },
               ),
             ],
             const SizedBox(height: 4),

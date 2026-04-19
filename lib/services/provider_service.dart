@@ -92,6 +92,49 @@ class ProviderService {
     );
   }
 
+  Future<void> updateProfile({
+    String? name,
+    String? email,
+    String? emergencyContact,
+    String? referralName,
+    String? city,
+    double? latitude,
+    double? longitude,
+    String? experience,
+    String? maritalStatus,
+    bool? hasVehicle,
+  }) async {
+    final body = <String, dynamic>{};
+
+    if (name != null) body['name'] = name;
+    if (email != null) body['email'] = email;
+    if (emergencyContact != null) body['emergencyContact'] = emergencyContact;
+    if (referralName != null) body['referralName'] = referralName;
+    if (experience != null) body['experience'] = experience;
+    if (maritalStatus != null) body['maritalStatus'] = maritalStatus;
+    if (hasVehicle != null) body['hasVehicle'] = hasVehicle;
+
+    final hasCity = city != null && city.trim().isNotEmpty;
+    final hasCoordinates = latitude != null && longitude != null;
+    if (hasCity || hasCoordinates) {
+      body['location'] = {
+        if (hasCity) 'city': city,
+        if (hasCoordinates) 'latitude': latitude,
+        if (hasCoordinates) 'longitude': longitude,
+      };
+
+      if (hasCity) {
+        body['city'] = city;
+      }
+    }
+
+    if (body.isEmpty) {
+      return;
+    }
+
+    await ApiClient.instance.put('/providers/me', body: body);
+  }
+
   String _resolveCity(Map<String, dynamic> provider) {
     final location = provider['location'];
     if (location is Map && location['city'] != null) {

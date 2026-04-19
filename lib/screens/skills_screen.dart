@@ -1,29 +1,16 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/provider_profile.dart';
 import '../models/provider_service_item.dart';
-import '../services/api_client.dart';
 import '../services/provider_service.dart';
 import '../services/provider_services_service.dart';
+import 'service_application_screen.dart';
 
 class SkillsScreen extends StatefulWidget {
   const SkillsScreen({super.key});
 
   @override
   State<SkillsScreen> createState() => _SkillsScreenState();
-}
-
-class _ChecklistDraft {
-  _ChecklistDraft({
-    required this.item,
-    required this.satisfied,
-    required this.note,
-  });
-
-  final String item;
-  bool satisfied;
-  String note;
 }
 
 class _SkillsScreenState extends State<SkillsScreen> {
@@ -39,14 +26,9 @@ class _SkillsScreenState extends State<SkillsScreen> {
 
   bool _servicesLoading = false;
   bool _skillsSaving = false;
-  bool _serviceSubmitting = false;
 
   String? _message;
   String? _error;
-
-  ProviderServiceItem? _activeService;
-  List<_ChecklistDraft> _checklistDraft = <_ChecklistDraft>[];
-  final Map<int, PlatformFile> _documentFiles = <int, PlatformFile>{};
 
   @override
   void initState() {
@@ -107,8 +89,9 @@ class _SkillsScreenState extends State<SkillsScreen> {
     return merged.toSet().toList();
   }
 
-  int get _verifiedCount {
-    return _services.where((service) => service.submission?.status == 'VERIFIED').length;
+  List<ProviderServiceItem> get _applicableServices {
+    final expertiseSet = _allocatedExpertise.map(_normalize).toSet();
+    return _services.where((service) => !expertiseSet.contains(_normalize(service.name))).toList();
   }
 
   bool get _skillsDirty {
@@ -168,126 +151,17 @@ class _SkillsScreenState extends State<SkillsScreen> {
     });
   }
 
-  void _openServiceDialog(ProviderServiceItem service) {
-    final submissionChecklist = service.submission?.checklist ?? const <ProviderServiceChecklistEntry>[];
-
-    final nextChecklist = service.checklist
-        .map(
-          (item) {
-            final matched = submissionChecklist.where((entry) => _normalize(entry.item) == _normalize(item));
-            final existing = matched.isEmpty ? null : matched.first;
-            return _ChecklistDraft(
-              item: item,
-              satisfied: existing?.satisfied ?? false,
-              note: existing?.note ?? '',
-            );
-          },
-        )
-        .toList();
-
-    setState(() {
-      _activeService = service;
-      _checklistDraft = nextChecklist;
-      _documentFiles.clear();
-      _error = null;
-      _message = null;
-    });
-  }
-
-  void _closeServiceDialog() {
-    setState(() {
-      _activeService = null;
-      _checklistDraft = <_ChecklistDraft>[];
-      _documentFiles.clear();
-    });
-  }
-
-  Future<void> _pickDocument(int index) async {
-    final picked = await FilePicker.platform.pickFiles(
-      withData: true,
-      type: FileType.custom,
-      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
+  Future<void> _openServiceApplicationScreen(ProviderServiceItem service) async {
+    final submitted = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ServiceApplicationScreen(service: service),
+      ),
     );
 
-    if (picked == null || picked.files.isEmpty) {
-      return;
-    }
-
-    setState(() {
-      _documentFiles[index] = picked.files.first;
-    });
-  }
-
-  Future<void> _submitService() async {
-    final service = _activeService;
-    if (service == null) {
-      return;
-    }
-
-    final unsatisfied = _checklistDraft.where((entry) => !entry.satisfied);
-    if (service.checklist.isNotEmpty && unsatisfied.isNotEmpty) {
-      _setError('Please mark checklist item as satisfied: ${unsatisfied.first.item}');
-      return;
-    }
-
-    for (var i = 0; i < service.requiredDocuments.length; i++) {
-      if (_documentFiles[i] == null) {
-        _setError('Please upload required document: ${service.requiredDocuments[i]}');
-        return;
-      }
-
-      if (_documentFiles[i]!.bytes == null) {
-        _setError('Unable to read document bytes for ${service.requiredDocuments[i]}');
-        return;
-      }
-    }
-
-    setState(() {
-      _serviceSubmitting = true;
-      _error = null;
-      _message = null;
-    });
-
-    try {
-      final docs = <ApiMultipartFile>[];
-      for (var i = 0; i < service.requiredDocuments.length; i++) {
-        final file = _documentFiles[i]!;
-        docs.add(
-          ApiMultipartFile(
-            field: 'documents',
-            filename: file.name,
-            bytes: file.bytes!,
-          ),
-        );
-      }
-
-      await _servicesService.submitForVerification(
-        serviceId: service.id,
-        checklist: _checklistDraft
-            .map(
-              (entry) => ProviderServiceChecklistEntry(
-                item: entry.item,
-                satisfied: entry.satisfied,
-                note: entry.note,
-              ),
-            )
-            .toList(),
-        documents: docs,
-      );
-
+    if (submitted == true) {
       await _loadData();
       if (!mounted) return;
-      _closeServiceDialog();
       _setMessage('${service.name} submitted for admin verification');
-    } catch (error) {
-      if (!mounted) return;
-      _setError(error);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _serviceSubmitting = false;
-        });
-      }
     }
   }
 
@@ -340,6 +214,15 @@ class _SkillsScreenState extends State<SkillsScreen> {
     }
   }
 
+  Future<void> _handleRefresh() async {
+    await _loadData();
+    if (!mounted) return;
+    setState(() {
+      _message = 'Skills refreshed';
+      _error = null;
+    });
+  }
+
   Widget _serviceCard(ProviderServiceItem service) {
     final status = service.submission?.status ?? '';
     final canApply = status != 'VERIFIED' && status != 'UNDER_REVIEW';
@@ -347,258 +230,103 @@ class _SkillsScreenState extends State<SkillsScreen> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        service.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A),
-                          fontSize: 21,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        service.description.isEmpty ? 'No description available' : service.description,
-                        style: const TextStyle(color: Color(0xFF64748B), fontSize: 14.5),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          Chip(
-                            label: Text(_statusLabel(status)),
-                            backgroundColor: _statusBgColor(status),
-                            side: BorderSide.none,
-                            labelStyle: TextStyle(
-                              color: _statusColor(status),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          Chip(
-                            label: Text('Checklist: ${service.checklist.length}'),
-                            backgroundColor: const Color(0xFFF8FAFC),
-                            side: const BorderSide(color: Color(0xFFE2E8F0)),
-                          ),
-                          Chip(
-                            label: Text('Docs: ${service.requiredDocuments.length}'),
-                            backgroundColor: const Color(0xFFF8FAFC),
-                            side: const BorderSide(color: Color(0xFFE2E8F0)),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Column(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 700;
+
+            Widget actionButtons({required bool fullWidth}) {
+              final applyLabel = status == 'VERIFIED'
+                  ? 'Verified'
+                  : status == 'UNDER_REVIEW'
+                      ? 'Under Review'
+                      : status == 'REJECTED'
+                          ? 'Re-Submit'
+                          : 'Apply';
+
+              final applyButton = FilledButton.tonal(
+                onPressed: canApply ? () => _openServiceApplicationScreen(service) : null,
+                child: Text(applyLabel),
+              );
+
+              if (!fullWidth) {
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    FilledButton.tonal(
-                      onPressed: canApply ? () => _openServiceDialog(service) : null,
-                      child: Text(
-                        status == 'VERIFIED'
-                            ? 'Verified'
-                            : status == 'UNDER_REVIEW'
-                                ? 'Under Review'
-                                : status == 'REJECTED'
-                                    ? 'Re-Submit'
-                                    : 'Apply',
+                    applyButton,
+                  ],
+                );
+              }
+
+              return SizedBox(width: double.infinity, child: applyButton);
+            }
+
+            final details = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  service.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                    fontSize: 21,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  service.description.isEmpty ? 'No description available' : service.description,
+                  style: const TextStyle(color: Color(0xFF64748B), fontSize: 14.5),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      label: Text(_statusLabel(status)),
+                      backgroundColor: _statusBgColor(status),
+                      side: BorderSide.none,
+                      labelStyle: TextStyle(
+                        color: _statusColor(status),
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: () => _openServiceDialog(service),
-                      child: const Text('View Details'),
+                    Chip(
+                      label: Text('Checklist: ${service.checklist.length}'),
+                      backgroundColor: const Color(0xFFF8FAFC),
+                      side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    Chip(
+                      label: Text('Docs: ${service.requiredDocuments.length}'),
+                      backgroundColor: const Color(0xFFF8FAFC),
+                      side: const BorderSide(color: Color(0xFFE2E8F0)),
                     ),
                   ],
                 ),
               ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+            );
 
-  Future<void> _showServiceDialog(ProviderServiceItem service) async {
-    _openServiceDialog(service);
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: !_serviceSubmitting,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (dialogContext, dialogSetState) {
-            final active = _activeService;
-            if (active == null) {
-              return const SizedBox.shrink();
-            }
-
-            final existingDocs = active.submission?.documents ?? const <ProviderServiceDocument>[];
-
-            ProviderServiceDocument? _findExistingDoc(String docName) {
-              final matches = existingDocs.where(
-                (doc) => _normalize(doc.name) == _normalize(docName),
+            if (compact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  details,
+                  const SizedBox(height: 10),
+                  actionButtons(fullWidth: true),
+                ],
               );
-              return matches.isEmpty ? null : matches.first;
             }
 
-            return AlertDialog(
-              title: Text(active.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-              content: SizedBox(
-                width: 680,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        active.description.isEmpty ? 'No description available' : active.description,
-                        style: const TextStyle(color: Color(0xFF64748B)),
-                      ),
-                      const SizedBox(height: 14),
-                      const Divider(),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Admin Checklist',
-                        style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 16),
-                      ),
-                      const SizedBox(height: 8),
-                      if (_checklistDraft.isEmpty)
-                        const Text(
-                          'No checklist required for this service.',
-                          style: TextStyle(color: Color(0xFF94A3B8)),
-                        )
-                      else
-                        ...List.generate(_checklistDraft.length, (index) {
-                          final entry = _checklistDraft[index];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Column(
-                              children: [
-                                CheckboxListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  value: entry.satisfied,
-                                  title: Text(entry.item),
-                                  onChanged: (value) {
-                                    dialogSetState(() {
-                                      entry.satisfied = value == true;
-                                    });
-                                  },
-                                ),
-                                TextField(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Note (optional)',
-                                  ),
-                                  controller: TextEditingController(text: entry.note)
-                                    ..selection = TextSelection.fromPosition(
-                                      TextPosition(offset: entry.note.length),
-                                    ),
-                                  onChanged: (value) {
-                                    entry.note = value;
-                                  },
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      const SizedBox(height: 10),
-                      const Divider(),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Required Documents',
-                        style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 16),
-                      ),
-                      const SizedBox(height: 8),
-                      if (active.requiredDocuments.isEmpty)
-                        const Text(
-                          'No documents required for this service.',
-                          style: TextStyle(color: Color(0xFF94A3B8)),
-                        )
-                      else
-                        ...List.generate(active.requiredDocuments.length, (index) {
-                          final docName = active.requiredDocuments[index];
-                          final selected = _documentFiles[index];
-                          final existing = _findExistingDoc(docName);
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(docName, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                const SizedBox(height: 6),
-                                if (existing != null)
-                                  const Text(
-                                    'Previously uploaded file available',
-                                    style: TextStyle(color: Color(0xFF0F766E), fontSize: 13.5),
-                                  ),
-                                const SizedBox(height: 8),
-                                OutlinedButton.icon(
-                                  onPressed: () async {
-                                    await _pickDocument(index);
-                                    dialogSetState(() {});
-                                  },
-                                  icon: const Icon(Icons.upload_file_outlined),
-                                  label: Text(selected?.name ?? 'Upload Document'),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: _serviceSubmitting
-                      ? null
-                      : () {
-                          Navigator.of(dialogContext).pop();
-                          _closeServiceDialog();
-                        },
-                  child: const Text('Close'),
-                ),
-                FilledButton(
-                  onPressed: _serviceSubmitting || active.submission?.status == 'VERIFIED'
-                      ? null
-                      : () async {
-                          await _submitService();
-                          if (!mounted) return;
-                          if (_activeService == null) {
-                            Navigator.of(dialogContext).pop();
-                          } else {
-                            dialogSetState(() {});
-                          }
-                        },
-                  child: Text(_serviceSubmitting ? 'Submitting...' : 'Submit for Verification'),
-                ),
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: details),
+                const SizedBox(width: 12),
+                actionButtons(fullWidth: false),
               ],
             );
           },
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -621,33 +349,17 @@ class _SkillsScreenState extends State<SkillsScreen> {
           );
         }
 
-        return ListView(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Services & Skills', style: Theme.of(context).textTheme.headlineMedium),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Apply for services, complete checklist, and upload required documents',
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Chip(
-                  label: Text('Verified Services: $_verifiedCount'),
-                  backgroundColor: const Color(0xFFDCFCE7),
-                  side: BorderSide.none,
-                  labelStyle: const TextStyle(color: Color(0xFF166534), fontWeight: FontWeight.w700),
-                ),
-              ],
+        return RefreshIndicator(
+          onRefresh: _handleRefresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              MediaQuery.of(context).size.width >= 1100 ? 24 : 12,
+              10,
+              MediaQuery.of(context).size.width >= 1100 ? 24 : 12,
+              16,
             ),
+            children: [
             if (_message != null) ...[
               const SizedBox(height: 12),
               Container(
@@ -728,41 +440,30 @@ class _SkillsScreenState extends State<SkillsScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            ..._services.map(
-              (service) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(24),
-                  onTap: () => _showServiceDialog(service),
+            if (_applicableServices.isEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No new skills available for application. Already assigned expertise is hidden.',
+                    style: const TextStyle(color: Color(0xFF64748B)),
+                  ),
+                ),
+              )
+            else
+              ..._applicableServices.map(
+                (service) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
                   child: _serviceCard(service),
                 ),
               ),
-            ),
             const SizedBox(height: 12),
             const Divider(),
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Custom Skills',
-                        style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 24),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Add specific skills for better matching',
-                        style: TextStyle(color: Color(0xFF64748B)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 680;
+                final saveButton = FilledButton.icon(
                   onPressed: _skillsSaving || !_skillsDirty ? null : _saveSkills,
                   icon: _skillsSaving
                       ? const SizedBox(
@@ -772,36 +473,99 @@ class _SkillsScreenState extends State<SkillsScreen> {
                         )
                       : const Icon(Icons.save_outlined),
                   label: Text(_skillsSaving ? 'Saving...' : 'Save Skills'),
-                ),
-              ],
+                );
+
+                return compact
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Custom Skills',
+                            style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 24),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Add specific skills for better matching',
+                            style: TextStyle(color: Color(0xFF64748B)),
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(width: double.infinity, child: saveButton),
+                        ],
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Custom Skills',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF0F172A),
+                                    fontSize: 24,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Add specific skills for better matching',
+                                  style: TextStyle(color: Color(0xFF64748B)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          saveButton,
+                        ],
+                      );
+              },
             ),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _skillInputController,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g., PCB Repair, Thermostat Replacement',
-                      prefixIcon: Icon(Icons.build_outlined),
-                    ),
-                    onChanged: (_) {
-                      if (_error != null) {
-                        setState(() {
-                          _error = null;
-                        });
-                      }
-                    },
-                    onSubmitted: (_) => _addSkill(),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 620;
+                final input = TextField(
+                  controller: _skillInputController,
+                  decoration: const InputDecoration(
+                    hintText: 'e.g., PCB Repair, Thermostat Replacement',
+                    prefixIcon: Icon(Icons.build_outlined),
                   ),
-                ),
-                const SizedBox(width: 10),
-                FilledButton.icon(
+                  onChanged: (_) {
+                    if (_error != null) {
+                      setState(() {
+                        _error = null;
+                      });
+                    }
+                  },
+                  onSubmitted: (_) => _addSkill(),
+                );
+
+                final addButton = FilledButton.icon(
                   onPressed: _addSkill,
                   icon: const Icon(Icons.add),
                   label: const Text('Add'),
-                ),
-              ],
+                );
+
+                if (compact) {
+                  return Column(
+                    children: [
+                      input,
+                      const SizedBox(height: 10),
+                      SizedBox(width: double.infinity, child: addButton),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: input),
+                    const SizedBox(width: 10),
+                    addButton,
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 10),
             if (_skills.isEmpty)
@@ -825,7 +589,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
                     )
                     .toList(),
               ),
-          ],
+            ],
+          ),
         );
       },
     );

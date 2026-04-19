@@ -97,86 +97,104 @@ class _ProviderShellState extends State<ProviderShell> {
   }
 
   Widget _buildDestinationList({required bool closeDrawerOnTap}) {
-    return Scrollbar(
-      child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-        children: [
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF111A2E), Color(0xFF111D34)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: Color(0xFF12D3B5),
-                child: Icon(Icons.handyman_outlined, color: Colors.white),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'FixItPro',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
+    return Column(
+      children: [
+        Expanded(
+          child: Scrollbar(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF111A2E), Color(0xFF111D34)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: Color(0xFF12D3B5),
+                        child: Icon(Icons.handyman_outlined, color: Colors.white),
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'FixItPro',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Service Provider Portal',
+                        style: TextStyle(color: Color(0xFF97A7C1)),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Service Provider Portal',
-                style: TextStyle(color: Color(0xFF97A7C1)),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        ...List.generate(_destinations.length, (index) {
-          final destination = _destinations[index];
-          final selected = index == _selectedIndex;
+                const SizedBox(height: 18),
+                ...List.generate(_destinations.length, (index) {
+                  final destination = _destinations[index];
+                  final selected = index == _selectedIndex;
 
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              selected: selected,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              leading: Icon(
-                destination.icon,
-                color: selected ? const Color(0xFF10B981) : null,
-              ),
-              title: Text(
-                destination.label,
-                style: TextStyle(
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: selected ? const Color(0xFF10B981) : null,
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      selected: selected,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      leading: Icon(
+                        destination.icon,
+                        color: selected ? const Color(0xFF10B981) : null,
+                      ),
+                      title: Text(
+                        destination.label,
+                        style: TextStyle(
+                          fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                          color: selected ? const Color(0xFF10B981) : null,
+                        ),
+                      ),
+                      selectedTileColor: const Color(0xFFD1FAE5),
+                      onTap: () {
+                        _selectIndex(index);
+                        if (closeDrawerOnTap && Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                    ),
+                  );
+                }),
+                const SizedBox(height: 8),
+                const Divider(),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Logout'),
+                  onTap: _logout,
                 ),
-              ),
-              selectedTileColor: const Color(0xFFD1FAE5),
-              onTap: () {
-                _selectIndex(index);
-                if (closeDrawerOnTap && Navigator.of(context).canPop()) {
-                  Navigator.of(context).pop();
-                }
-              },
+              ],
             ),
-          );
-        }),
-        const SizedBox(height: 8),
-        const Divider(),
-        const SizedBox(height: 8),
-        ListTile(
-          leading: const Icon(Icons.logout),
-          title: const Text('Logout'),
-          onTap: _logout,
+          ),
         ),
-        ],
-      ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(12, 6, 12, 12),
+          child: Text(
+            'FixItPro_1.0.1_20 Apr 2026_build',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

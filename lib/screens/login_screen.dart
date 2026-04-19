@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/auth_service.dart';
 
@@ -11,8 +12,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final AuthService _authService = AuthService();
-  final TextEditingController _mobileController = TextEditingController(text: '9876543210');
-  final TextEditingController _otpController = TextEditingController(text: '123456');
+  final TextEditingController _mobileController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
   bool _loading = false;
   bool _otpSent = false;
   String? _pendingMobile;
@@ -35,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       if (!_otpSent) {
         final mobile = _mobileController.text.trim();
-        if (mobile.length != 10) {
+        if (mobile.length != 10 || int.tryParse(mobile) == null) {
           throw Exception('Enter a valid 10 digit mobile number.');
         }
 
@@ -46,6 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
           _otpSent = true;
           _pendingMobile = mobile;
           _debugOtp = response['debugOtp']?.toString() ?? '123456';
+          _otpController.clear();
         });
         return;
       }
@@ -152,25 +154,75 @@ class _LoginScreenState extends State<LoginScreen> {
             TextField(
               controller: _mobileController,
               keyboardType: TextInputType.phone,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(10),
+              ],
               enabled: !_otpSent,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Mobile number',
-                prefixIcon: Icon(Icons.phone_outlined),
+                prefixIcon: const Icon(Icons.phone_outlined),
+                hintText: 'Enter 10-digit mobile number',
+                counterText: '',
+                suffixIcon: _otpSent
+                    ? TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _otpSent = false;
+                            _pendingMobile = null;
+                            _otpController.clear();
+                            _error = null;
+                          });
+                        },
+                        child: const Text('Change'),
+                      )
+                    : null,
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Use the OTP sent to your phone. If the backend is running in mock mode, the code may appear above.',
-              style: TextStyle(color: Color(0xFF64748B)),
+            Text(
+              _otpSent
+                  ? 'Enter the 6-digit OTP sent to +91 ${_pendingMobile ?? _mobileController.text.trim()}.'
+                  : 'Tap Send OTP to receive a verification code.',
+              style: const TextStyle(color: Color(0xFF64748B)),
             ),
             if (_otpSent) ...[
               const SizedBox(height: 16),
-              TextField(
-                controller: _otpController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'OTP',
-                  prefixIcon: Icon(Icons.password_outlined),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F9FF),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'OTP Verification',
+                      style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _otpController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(6),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'OTP',
+                        prefixIcon: Icon(Icons.lock_outline_rounded),
+                        hintText: 'Enter 6-digit OTP',
+                        counterText: '',
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -201,11 +253,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       )
                     : Text(_otpSent ? 'Verify OTP' : 'Send OTP'),
               ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Dummy OTP mode is enabled. Use 123456 to sign in.',
-              style: TextStyle(color: Color(0xFF64748B)),
             ),
           ],
         ),

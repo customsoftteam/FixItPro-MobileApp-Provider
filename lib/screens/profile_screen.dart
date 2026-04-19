@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../models/provider_profile.dart';
+import '../services/api_client.dart';
 import '../services/provider_service.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -13,6 +15,10 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final ProviderService _providerService = ProviderService();
   late Future<ProviderProfile> _profileFuture;
+  bool _isFetchingLocation = false;
+  double? _liveLatitude;
+  double? _liveLongitude;
+  String _locationMessage = '';
 
   @override
   void initState() {
@@ -53,6 +59,321 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _safe(String value, {String fallback = 'Not specified'}) {
     final trimmed = value.trim();
     return trimmed.isEmpty ? fallback : trimmed;
+  }
+
+  void _refreshProfile() {
+    setState(() {
+      _profileFuture = _providerService.getProfile();
+    });
+  }
+
+  Future<void> _fetchRealtimeLocation(ProviderProfile profile) async {
+    if (_isFetchingLocation) return;
+
+    setState(() {
+      _isFetchingLocation = true;
+      _locationMessage = '';
+    });
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() {
+          _locationMessage = 'Please enable device location and try again.';
+          _isFetchingLocation = false;
+        });
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        setState(() {
+          _locationMessage = 'Location permission is required to fetch real-time coordinates.';
+          _isFetchingLocation = false;
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+
+      await _providerService.updateProfile(
+        city: profile.city,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+
+      setState(() {
+        _liveLatitude = position.latitude;
+        _liveLongitude = position.longitude;
+        _locationMessage = 'Real-time location updated.';
+        _isFetchingLocation = false;
+      });
+
+      _refreshProfile();
+    } catch (error) {
+      setState(() {
+        _locationMessage = 'Unable to fetch location: $error';
+        _isFetchingLocation = false;
+      });
+    }
+  }
+
+  String _resolveDocumentUrl(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return '';
+
+    final parsed = Uri.tryParse(raw);
+    if (parsed != null && parsed.hasScheme) {
+      return raw;
+    }
+
+    final base = Uri.parse(ApiClient.instance.baseUrl);
+    final origin = base.replace(path: '');
+    final normalized = raw.startsWith('/') ? raw : '/$raw';
+    return origin.resolve(normalized).toString();
+  }
+
+  Future<void> _showDocumentPreview({required String title, required String url}) async {
+    final resolvedUrl = _resolveDocumentUrl(url);
+    if (resolvedUrl.isEmpty) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860, maxHeight: 760),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4,
+                  child: Image.network(
+                    resolvedUrl,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Text('Preview not available for this file.'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openEditProfileSheet(ProviderProfile profile) async {
+    final nameController = TextEditingController(text: profile.name);
+    final emailController = TextEditingController(text: profile.email);
+    final emergencyController = TextEditingController(text: profile.emergencyContact);
+    final referralController = TextEditingController(text: profile.referralName);
+    final cityController = TextEditingController(text: profile.city);
+
+    String experience = profile.experience.isEmpty ? 'NO_EXPERIENCE' : profile.experience;
+    String maritalStatus = profile.maritalStatus.isEmpty ? 'UNMARRIED' : profile.maritalStatus;
+    bool hasVehicle = profile.hasVehicle;
+    bool saving = false;
+
+    const experienceOptions = [
+      DropdownMenuItem(value: 'NO_EXPERIENCE', child: Text('No experience')),
+      DropdownMenuItem(value: 'LESS_THAN_6_MONTHS', child: Text('Less than 6 months')),
+      DropdownMenuItem(value: 'SIX_TO_TWELVE_MONTHS', child: Text('6 to 12 months')),
+      DropdownMenuItem(value: 'MORE_THAN_1_YEAR', child: Text('More than 1 year')),
+    ];
+
+    const maritalOptions = [
+      DropdownMenuItem(value: 'UNMARRIED', child: Text('Unmarried')),
+      DropdownMenuItem(value: 'MARRIED', child: Text('Married')),
+    ];
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, modalSetState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                MediaQuery.of(context).viewInsets.bottom + 16,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Edit Profile',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(labelText: 'Full Name'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(labelText: 'Email'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: emergencyController,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(labelText: 'Emergency Contact'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: referralController,
+                      decoration: const InputDecoration(labelText: 'Referral Name'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: cityController,
+                      decoration: const InputDecoration(labelText: 'City'),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: experience,
+                      items: experienceOptions,
+                      onChanged: (value) {
+                        if (value == null) return;
+                        modalSetState(() {
+                          experience = value;
+                        });
+                      },
+                      decoration: const InputDecoration(labelText: 'Experience'),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: maritalStatus,
+                      items: maritalOptions,
+                      onChanged: (value) {
+                        if (value == null) return;
+                        modalSetState(() {
+                          maritalStatus = value;
+                        });
+                      },
+                      decoration: const InputDecoration(labelText: 'Marital Status'),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Own Vehicle'),
+                      value: hasVehicle,
+                      onChanged: (value) {
+                        modalSetState(() {
+                          hasVehicle = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: saving ? null : () => Navigator.of(context).pop(),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: saving
+                                ? null
+                                : () async {
+                                    final name = nameController.text.trim();
+                                    if (name.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Name is required')),
+                                      );
+                                      return;
+                                    }
+
+                                    modalSetState(() {
+                                      saving = true;
+                                    });
+
+                                    try {
+                                      await _providerService.updateProfile(
+                                        name: name,
+                                        email: emailController.text.trim(),
+                                        emergencyContact: emergencyController.text.trim(),
+                                        referralName: referralController.text.trim(),
+                                        city: cityController.text.trim(),
+                                        experience: experience,
+                                        maritalStatus: maritalStatus,
+                                        hasVehicle: hasVehicle,
+                                      );
+
+                                      if (!mounted) return;
+                                      Navigator.of(context).pop();
+                                      _refreshProfile();
+                                      ScaffoldMessenger.of(this.context).showSnackBar(
+                                        const SnackBar(content: Text('Profile updated successfully')),
+                                      );
+                                    } catch (error) {
+                                      if (!mounted) return;
+                                      modalSetState(() {
+                                        saving = false;
+                                      });
+                                      ScaffoldMessenger.of(this.context).showSnackBar(
+                                        SnackBar(content: Text('Update failed: $error')),
+                                      );
+                                    }
+                                  },
+                            child: saving
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Text('Save'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _statTile({
@@ -161,7 +482,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _documentTile({required String title, required bool uploaded}) {
+  Widget _documentTile({
+    required String title,
+    required bool uploaded,
+    required String url,
+  }) {
+    final canPreview = uploaded && url.trim().isNotEmpty;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -191,6 +518,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ),
+          if (canPreview)
+            TextButton(
+              onPressed: () => _showDocumentPreview(title: title, url: url),
+              child: const Text('Preview'),
+            ),
           Icon(
             uploaded ? Icons.check_circle_outline : Icons.radio_button_unchecked,
             color: uploaded ? const Color(0xFF1F9D62) : const Color(0xFF94A3B8),
@@ -236,6 +568,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final hasProfileImage = profile.profileImage.trim().isNotEmpty;
 
         return ListView(
+          padding: EdgeInsets.fromLTRB(
+            MediaQuery.of(context).size.width >= 1100 ? 24 : 12,
+            10,
+            MediaQuery.of(context).size.width >= 1100 ? 24 : 12,
+            16,
+          ),
           children: [
             Text('Profile', style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 6),
@@ -315,8 +653,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Expanded(
                               child: Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                child: Wrap(
+                                  runSpacing: 6,
                                   children: [
                                     Text(
                                       _safe(profile.name, fallback: 'Service Provider'),
@@ -326,7 +664,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         color: Color(0xFF0F172A),
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
                                     Text(
                                       _safe(profile.city, fallback: 'Location not set'),
                                       style: const TextStyle(color: Color(0xFF64748B), fontSize: 16),
@@ -454,6 +791,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _sectionCard(
               icon: Icons.person_outline_rounded,
               title: 'Personal Information',
+              trailing: TextButton.icon(
+                onPressed: () => _openEditProfileSheet(profile),
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Edit'),
+              ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final isWide = constraints.maxWidth >= 820;
@@ -629,17 +971,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 12),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: profile.skills.isEmpty
-                          ? const [
-                              Chip(label: Text('No skills added')),
-                            ]
-                          : profile.skills
-                              .map((skill) => Chip(label: Text(skill)))
-                              .toList(),
-                    ),
+                    child: profile.skills.isEmpty
+                        ? const SizedBox.shrink()
+                        : Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: profile.skills.map((skill) => Chip(label: Text(skill))).toList(),
+                          ),
                   ),
                 ],
               ),
@@ -650,9 +988,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               title: 'Service Area',
               trailing: TextButton.icon(
                 onPressed: () {
-                  setState(() {
-                    _profileFuture = _providerService.getProfile();
-                  });
+                  _refreshProfile();
                 },
                 icon: const Icon(Icons.refresh),
                 label: const Text('Refresh'),
@@ -661,7 +997,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _readOnlyField(label: 'Location', value: _safe(profile.city, fallback: 'Location not set')),
-                  if (profile.latitude != null && profile.longitude != null) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.icon(
+                      onPressed: _isFetchingLocation ? null : () => _fetchRealtimeLocation(profile),
+                      icon: _isFetchingLocation
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.my_location),
+                      label: Text(_isFetchingLocation ? 'Fetching...' : 'Fetch Real-time Location'),
+                    ),
+                  ),
+                  if (_locationMessage.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _locationMessage,
+                      style: TextStyle(
+                        color: _locationMessage.startsWith('Unable') || _locationMessage.startsWith('Please')
+                            ? const Color(0xFFB42318)
+                            : const Color(0xFF047857),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  if (_liveLatitude != null && _liveLongitude != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Live Coordinates: ${_liveLatitude!.toStringAsFixed(5)}, ${_liveLongitude!.toStringAsFixed(5)}',
+                      style: const TextStyle(color: Color(0xFF0F8F7B), fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                  ] else if (profile.latitude != null && profile.longitude != null) ...[
                     const SizedBox(height: 8),
                     Text(
                       'Coordinates: ${profile.latitude!.toStringAsFixed(4)}, ${profile.longitude!.toStringAsFixed(4)}',
@@ -686,16 +1056,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _documentTile(
                     title: 'Aadhaar Front',
                     uploaded: profile.documents.aadharFrontUrl.trim().isNotEmpty,
+                    url: profile.documents.aadharFrontUrl,
                   ),
                   const SizedBox(height: 10),
                   _documentTile(
                     title: 'Aadhaar Back',
                     uploaded: profile.documents.aadharBackUrl.trim().isNotEmpty,
+                    url: profile.documents.aadharBackUrl,
                   ),
                   const SizedBox(height: 10),
                   _documentTile(
                     title: 'PAN Card',
                     uploaded: profile.documents.panUrl.trim().isNotEmpty,
+                    url: profile.documents.panUrl,
                   ),
                 ],
               ),

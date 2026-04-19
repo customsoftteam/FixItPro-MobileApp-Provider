@@ -1,11 +1,13 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../models/booking_item.dart';
 import '../services/api_client.dart';
 import '../services/booking_service.dart';
-import '../widgets/service_workflow_dialog.dart';
+import 'booking_details_screen.dart';
+import 'service_workflow_screen.dart';
 
 class BookingsScreen extends StatefulWidget {
   const BookingsScreen({super.key});
@@ -38,6 +40,13 @@ class _BookingsScreenState extends State<BookingsScreen> {
   ];
 
   final Set<String> _reachedLocationBookingIds = <String>{};
+
+  static const Set<String> _ongoingStatuses = {
+    'accepted',
+    'in_progress',
+    'paused',
+    'otp_sent',
+  };
 
   final Map<String, _StatusStyle> _statusStyle = const {
     'pending': _StatusStyle(bg: Color(0xFFFFF7E8), fg: Color(0xFFB45309), border: Color(0xFFFCD9A5), label: 'Pending Approval', icon: Icons.hourglass_empty_outlined),
@@ -150,18 +159,27 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
   Future<void> _openWorkflowDialog(BookingItem booking) async {
     final workflowBookingId = booking.backendId.isEmpty ? booking.id : booking.backendId;
-    final updated = await showDialog<bool>(
-      context: context,
-      builder: (_) => ServiceWorkflowDialog(
-        bookingId: workflowBookingId,
-        bookingCode: booking.id,
-        bookingService: _bookingService,
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ServiceWorkflowScreen(
+          bookingId: workflowBookingId,
+          bookingCode: booking.id,
+          bookingService: _bookingService,
+        ),
       ),
     );
 
     if (updated == true) {
       await _loadBookings(silent: true);
     }
+  }
+
+  Future<void> _openDetailsScreen(BookingItem booking) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BookingDetailsScreen(booking: booking),
+      ),
+    );
   }
 
   String _formatDateTime(DateTime value) {
@@ -210,6 +228,55 @@ class _BookingsScreenState extends State<BookingsScreen> {
       final haystack = '${booking.id} ${booking.customerName} ${booking.serviceName} ${booking.address} $status'.toLowerCase();
       return haystack.contains(query);
     }).toList();
+  }
+
+  bool _isOngoingStatus(String status) {
+    return _ongoingStatuses.contains(status.trim().toLowerCase());
+  }
+
+  Future<void> _clearOngoingBookings() async {
+    final ongoingCount = _bookings.where((booking) => _isOngoingStatus(booking.status)).length;
+    if (ongoingCount == 0) {
+      setState(() {
+        _message = 'No ongoing bookings to clear.';
+        _error = null;
+      });
+      return;
+    }
+
+    final shouldClear = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Clear Ongoing Bookings'),
+        content: Text('Clear $ongoingCount ongoing booking(s) from this list?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldClear != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _bookings = _bookings.where((booking) => !_isOngoingStatus(booking.status)).toList();
+      _reachedLocationBookingIds.removeWhere(
+        (bookingId) => !_bookings.any((booking) => booking.id == bookingId),
+      );
+      _message = '$ongoingCount ongoing booking(s) cleared from view.';
+      _error = null;
+      if (_activeTab != 'all' && _activeTab != 'assigned' && _activeTab != 'completed' && _activeTab != 'rejected') {
+        _activeTab = 'all';
+      }
+    });
   }
 
   Map<String, int> _tabCounts() {
@@ -306,16 +373,19 @@ class _BookingsScreenState extends State<BookingsScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Expanded(
+                          ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: math.max(120, constraints.maxWidth - 120)),
                             child: Text(
                               booking.id,
                               style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w700),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 10),
                           _statusChip(status),
                         ],
                       ),
@@ -485,7 +555,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
                       ),
                     OutlinedButton.icon(
                       onPressed: () {
-                        _openDetailsDialog(booking);
+                        _openDetailsScreen(booking);
                       },
                       icon: const Icon(Icons.visibility_outlined, size: 18),
                       label: const Text('Details'),
@@ -502,12 +572,15 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
   void _openDetailsDialog(BookingItem booking) {
     final status = booking.status.trim().toLowerCase();
+    final width = MediaQuery.of(context).size.width;
+    final dialogWidth = math.min(680.0, width - 24);
+
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Booking Details', style: TextStyle(fontWeight: FontWeight.w800)),
         content: SizedBox(
-          width: 680,
+          width: dialogWidth,
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,6 +645,12 @@ class _BookingsScreenState extends State<BookingsScreen> {
   Widget build(BuildContext context) {
     final visibleBookings = _visibleBookings();
     final tabCounts = _tabCounts();
+    final pageWidth = MediaQuery.of(context).size.width;
+    final horizontalPadding = pageWidth >= 1200
+      ? 24.0
+      : pageWidth >= 700
+        ? 16.0
+        : 12.0;
 
     if (_loading) {
       if (_error != null) {
@@ -589,29 +668,55 @@ class _BookingsScreenState extends State<BookingsScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Scrollbar(
-      child: ListView(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
+    return RefreshIndicator(
+      onRefresh: () => _loadBookings(silent: true),
+      child: Scrollbar(
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 16),
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 620;
+              final clearButton = OutlinedButton.icon(
+                onPressed: (_loading || _refreshing || _actionBookingId.isNotEmpty) ? null : _clearOngoingBookings,
+                icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                label: const Text('Clear Ongoing'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              );
+
+              if (isNarrow) {
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Bookings', style: Theme.of(context).textTheme.headlineMedium),
                     const SizedBox(height: 6),
                     const Text('Service workflow for assigned bookings'),
+                    const SizedBox(height: 10),
+                    clearButton,
                   ],
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: _refreshing ? null : () => _loadBookings(silent: true),
-                icon: _refreshing
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.refresh_rounded),
-                label: Text(_refreshing ? 'Refreshing...' : 'Refresh'),
-              ),
-            ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Bookings', style: Theme.of(context).textTheme.headlineMedium),
+                        const SizedBox(height: 6),
+                        const Text('Service workflow for assigned bookings'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  clearButton,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           if (_message != null) ...[
@@ -638,38 +743,62 @@ class _BookingsScreenState extends State<BookingsScreen> {
               child: Text(_error!, style: const TextStyle(color: Color(0xFF991B1B), fontWeight: FontWeight.w700)),
             ),
           ],
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEDF2F7),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: DropdownButtonFormField<String>(
-              initialValue: _activeTab,
-              items: _buildStatusFilterItems(tabCounts),
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() {
-                  _activeTab = value;
-                });
-              },
-              decoration: const InputDecoration(
-                labelText: 'Filter by status',
-                prefixIcon: Icon(Icons.filter_list_rounded),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(
-              hintText: 'Search by customer, service, booking ID or status',
-              prefixIcon: Icon(Icons.search_rounded),
-            ),
-            onChanged: (value) {
-              setState(() {
-                _searchText = value;
-              });
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isTwoColumn = constraints.maxWidth >= 880;
+              final filter = Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEDF2F7),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonFormField<String>(
+                  initialValue: _activeTab,
+                  isExpanded: true,
+                  items: _buildStatusFilterItems(tabCounts),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _activeTab = value;
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    labelText: 'Filter by status',
+                    prefixIcon: Icon(Icons.filter_list_rounded),
+                  ),
+                ),
+              );
+
+              final search = TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  hintText: 'Search by customer, service, booking ID or status',
+                  prefixIcon: Icon(Icons.search_rounded),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _searchText = value;
+                  });
+                },
+              );
+
+              if (!isTwoColumn) {
+                return Column(
+                  children: [
+                    filter,
+                    const SizedBox(height: 12),
+                    search,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: filter),
+                  const SizedBox(width: 12),
+                  Expanded(child: search),
+                ],
+              );
             },
           ),
           const SizedBox(height: 12),
@@ -685,6 +814,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
             ),
           ...visibleBookings.map(_bookingCard),
         ],
+        ),
       ),
     );
   }

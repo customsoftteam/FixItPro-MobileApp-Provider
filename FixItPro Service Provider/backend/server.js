@@ -11,6 +11,16 @@ const startServer = async () => {
     const server = http.createServer(app);
     initializeSocket(server);
 
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Stop the existing backend process and try again.`);
+        process.exit(1);
+      }
+
+      console.error('Server startup error:', error.message);
+      process.exit(1);
+    });
+
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

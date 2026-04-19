@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/product_catalog_item.dart';
 import '../services/products_service.dart';
+import 'product_details_screen.dart';
 
 class ProductsScreen extends StatefulWidget {
   const ProductsScreen({super.key});
@@ -84,10 +85,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }).toList();
   }
 
-  int get _totalComponents {
-    return _products.fold<int>(0, (sum, product) => sum + product.componentCount);
-  }
-
   String _normalizeCurrency(double value) {
     final full = value.toStringAsFixed(0);
     final formatted = full.replaceAllMapped(
@@ -97,8 +94,22 @@ class _ProductsScreenState extends State<ProductsScreen> {
     return 'Rs $formatted';
   }
 
+  int _gridColumns(double width) {
+    if (width >= 1400) return 4;
+    if (width >= 1080) return 3;
+    if (width >= 720) return 2;
+    return 1;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final pageWidth = MediaQuery.of(context).size.width;
+    final horizontalPadding = pageWidth >= 1200
+      ? 24.0
+      : pageWidth >= 700
+        ? 16.0
+        : 12.0;
+
     if (_loading && _products.isEmpty) {
       if (_error != null) {
         return Center(
@@ -119,105 +130,59 @@ class _ProductsScreenState extends State<ProductsScreen> {
     return RefreshIndicator(
       onRefresh: () => _loadProducts(silent: true),
       child: ListView(
+        padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 16),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0F172A), Color(0xFF1D4ED8), Color(0xFF0EA5E9)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x220F172A),
-                  blurRadius: 30,
-                  offset: Offset(0, 14),
-                ),
-              ],
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Products',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 32,
-                              fontWeight: FontWeight.w900,
-                              height: 1.05,
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    style: const TextStyle(color: Color(0xFF0F172A)),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      hintText: 'Search products',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _searchText.isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchText = '';
+                                });
+                              },
+                              icon: const Icon(Icons.close_rounded),
                             ),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'Browse the active product catalog and open any product to see its components and pricing.',
-                            style: TextStyle(color: Color(0xFFD9E6F7), height: 1.45),
-                          ),
-                        ],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
                       ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
                     ),
-                    const SizedBox(width: 12),
-                    if (_refreshing)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _StatChip(label: '${_products.length} products', icon: Icons.inventory_2_outlined),
-                    _StatChip(label: '$_totalComponents components', icon: Icons.build_outlined),
-                    _StatChip(label: 'Website-style catalog', icon: Icons.view_agenda_outlined),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _searchController,
-                  style: const TextStyle(color: Color(0xFF0F172A)),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.96),
-                    hintText: 'Search by product, category, description, or tag',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _searchText.isEmpty
-                        ? null
-                        : IconButton(
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {
-                                _searchText = '';
-                              });
-                            },
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _searchText = value;
+                      });
+                    },
                   ),
-                  onChanged: (value) {
-                    setState(() {
-                      _searchText = value;
-                    });
-                  },
                 ),
+                if (_refreshing) ...[
+                  const SizedBox(width: 12),
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
               ],
             ),
           ),
@@ -251,11 +216,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
             LayoutBuilder(
               builder: (context, constraints) {
                 final width = constraints.maxWidth;
-                final columns = width >= 1180
-                    ? 3
-                    : width >= 760
-                        ? 2
-                        : 1;
+                final columns = _gridColumns(width);
                 final itemWidth = columns == 1 ? width : (width - ((columns - 1) * 14)) / columns;
 
                 return Wrap(
@@ -285,226 +246,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
           const SizedBox(height: 8),
         ],
       ),
-    );
-  }
-}
-
-class ProductDetailsScreen extends StatelessWidget {
-  const ProductDetailsScreen({super.key, required this.product});
-
-  final ProductCatalogItem product;
-
-  String _normalizeCurrency(double value) {
-    final full = value.toStringAsFixed(0);
-    final formatted = full.replaceAllMapped(
-      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-      (match) => '${match.group(1)},',
-    );
-    return 'Rs $formatted';
-  }
-
-  Widget _statCard({required String label, required String value, required IconData icon}) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: const Color(0xFF0F766E)),
-            const SizedBox(height: 10),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: Color(0xFF0F172A))),
-            const SizedBox(height: 4),
-            Text(label, style: const TextStyle(color: Color(0xFF64748B))),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final imageUrl = resolveProductMediaUrl(product.image);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(product.name),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: const LinearGradient(
-                colors: [Color(0xFF022C22), Color(0xFF0F766E), Color(0xFF14B8A6)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 900;
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (isWide)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: _HeroImage(imageUrl: imageUrl),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            flex: 4,
-                            child: _HeroDetails(product: product, currencyLabel: _normalizeCurrency(product.totalPrice)),
-                          ),
-                        ],
-                      )
-                    else ...[
-                      _HeroImage(imageUrl: imageUrl),
-                      const SizedBox(height: 16),
-                      _HeroDetails(product: product, currencyLabel: _normalizeCurrency(product.totalPrice)),
-                    ],
-                  ],
-                );
-              },
-            ),
-          ),
-          if (product.tags.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: product.tags
-                  .map(
-                    (tag) => Chip(
-                      label: Text(tag),
-                      backgroundColor: const Color(0xFFF8FAFC),
-                      side: const BorderSide(color: Color(0xFFD8E3EF)),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _statCard(label: 'Components', value: '${product.componentCount}', icon: Icons.build_outlined),
-              const SizedBox(width: 12),
-              _statCard(label: 'Total price', value: _normalizeCurrency(product.totalPrice), icon: Icons.currency_rupee_rounded),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text('Components', style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 8),
-          if (product.components.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: const Text('No active components available for this product.'),
-            )
-          else
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                final columns = width >= 1100
-                    ? 3
-                    : width >= 700
-                        ? 2
-                        : 1;
-                final itemWidth = columns == 1 ? width : (width - ((columns - 1) * 12)) / columns;
-
-                return Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: product.components
-                      .map(
-                        (component) => SizedBox(
-                          width: itemWidth,
-                          child: _ComponentCard(component: component),
-                        ),
-                      )
-                      .toList(),
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroImage extends StatelessWidget {
-  const _HeroImage({required this.imageUrl});
-
-  final String imageUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 210,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: _CatalogImage(imageUrl: imageUrl),
-      ),
-    );
-  }
-}
-
-class _HeroDetails extends StatelessWidget {
-  const _HeroDetails({required this.product, required this.currencyLabel});
-
-  final ProductCatalogItem product;
-  final String currencyLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          product.name,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 32,
-            fontWeight: FontWeight.w900,
-            height: 1.05,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          product.description.isEmpty ? 'No description available' : product.description,
-          style: const TextStyle(color: Color(0xFFD8F3F0), height: 1.45),
-        ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _DetailChip(label: product.category.isEmpty ? 'general' : product.category),
-            _DetailChip(label: '${product.componentCount} components'),
-            _DetailChip(label: currencyLabel),
-          ],
-        ),
-      ],
     );
   }
 }
@@ -613,60 +354,6 @@ class _ProductCard extends StatelessWidget {
   }
 }
 
-class _ComponentCard extends StatelessWidget {
-  const _ComponentCard({required this.component});
-
-  final ProductComponentItem component;
-
-  @override
-  Widget build(BuildContext context) {
-    final imageUrl = resolveProductMediaUrl(component.image);
-
-    return Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: 180,
-            width: double.infinity,
-            child: _CatalogImage(imageUrl: imageUrl),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  component.name,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF0F172A)),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  component.description.isEmpty ? 'No description available' : component.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFF64748B), height: 1.4),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Icon(Icons.currency_rupee_rounded, color: Color(0xFF0F766E), size: 18),
-                    const SizedBox(width: 4),
-                    Text(
-                      component.price.toStringAsFixed(0),
-                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF0F766E)),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _CatalogImage extends StatelessWidget {
   const _CatalogImage({required this.imageUrl});
 
@@ -714,18 +401,3 @@ class _StatChip extends StatelessWidget {
   }
 }
 
-class _DetailChip extends StatelessWidget {
-  const _DetailChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(
-      label: Text(label),
-      backgroundColor: Colors.white.withValues(alpha: 0.16),
-      labelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-      side: BorderSide.none,
-    );
-  }
-}

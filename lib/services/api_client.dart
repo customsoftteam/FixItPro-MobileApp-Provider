@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import 'auth_service.dart';
 
@@ -13,7 +14,7 @@ class ApiClient {
 
   static const String _desktopBaseUrl = 'http://localhost:5000/api';
   static const String _androidEmulatorBaseUrl = 'http://10.11.45.212:5000/api';
-  static const String _androidPhysicalDeviceBaseUrl = 'http://10.11.45.212:5000/api';
+  static const String _androidPhysicalDeviceBaseUrl = 'https://hosted-fixitpro-provider.onrender.com/api';
 
   String get baseUrl {
     if (kIsWeb) {
@@ -112,6 +113,7 @@ class ApiClient {
             file.field,
             file.bytes,
             filename: file.filename,
+            contentType: file.mimeType == null ? null : MediaType.parse(file.mimeType!),
           ),
         );
       }
@@ -139,11 +141,13 @@ class ApiMultipartFile {
     required this.field,
     required this.filename,
     required this.bytes,
+    this.mimeType,
   });
 
   final String field;
   final String filename;
   final Uint8List bytes;
+  final String? mimeType;
 }
 
 class ApiClientException implements Exception {

@@ -175,13 +175,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       onRefresh: _reload,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          MediaQuery.of(context).size.width >= 1100 ? 24 : 12,
+          10,
+          MediaQuery.of(context).size.width >= 1100 ? 24 : 12,
+          14,
+        ),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text('Notifications', style: Theme.of(context).textTheme.headlineMedium),
-              ),
-              OutlinedButton.icon(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 600;
+              final markAllButton = OutlinedButton.icon(
                 onPressed: (_unreadCount == 0 || _markingAllRead) ? null : _markAllRead,
                 icon: _markingAllRead
                     ? const SizedBox(
@@ -191,8 +195,28 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       )
                     : const Icon(Icons.mark_email_read_outlined),
                 label: const Text('Mark all read'),
-              ),
-            ],
+              );
+
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Notifications', style: Theme.of(context).textTheme.headlineMedium),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: markAllButton),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(
+                    child: Text('Notifications', style: Theme.of(context).textTheme.headlineMedium),
+                  ),
+                  markAllButton,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 8),
           Text('$_unreadCount unread notifications'),
@@ -256,65 +280,83 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               child: Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      CircleAvatar(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 420;
+                      final iconWidget = CircleAvatar(
                         backgroundColor: item.isRead ? const Color(0xFFF1F5F9) : const Color(0xFFEAF2FF),
                         child: Icon(
                           item.type.startsWith('BOOKING') ? Icons.assignment_turned_in_outlined : Icons.info_outline,
                           color: item.type.startsWith('BOOKING') ? const Color(0xFF0EA5E9) : const Color(0xFF64748B),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
+                      );
+
+                      final content = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                item.title,
+                                style: TextStyle(
+                                  fontWeight: item.isRead ? FontWeight.w700 : FontWeight.w800,
+                                ),
+                              ),
+                              Chip(
+                                label: Text(_typeLabel(item.type)),
+                                side: BorderSide.none,
+                                backgroundColor: const Color(0xFFEEF2FF),
+                                labelStyle: TextStyle(
+                                  color: _typeColor(item.type),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              if (!item.isRead)
+                                const Chip(
+                                  label: Text('New'),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(item.message, style: const TextStyle(color: Color(0xFF475569))),
+                          const SizedBox(height: 8),
+                          Text(
+                            _formatTime(item.createdAt),
+                            style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
+                          ),
+                          if (!item.isRead) ...[
+                            const SizedBox(height: 10),
+                            TextButton(
+                              onPressed: () => _markRead(item),
+                              child: const Text('Mark read'),
+                            ),
+                          ],
+                        ],
+                      );
+
+                      if (compact) {
+                        return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  item.title,
-                                  style: TextStyle(
-                                    fontWeight: item.isRead ? FontWeight.w700 : FontWeight.w800,
-                                  ),
-                                ),
-                                Chip(
-                                  label: Text(_typeLabel(item.type)),
-                                  side: BorderSide.none,
-                                  backgroundColor: const Color(0xFFEEF2FF),
-                                  labelStyle: TextStyle(
-                                    color: _typeColor(item.type),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                if (!item.isRead)
-                                  const Chip(
-                                    label: Text('New'),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(item.message, style: const TextStyle(color: Color(0xFF475569))),
-                            const SizedBox(height: 8),
-                            Text(
-                              _formatTime(item.createdAt),
-                              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
-                            ),
-                            if (!item.isRead) ...[
-                              const SizedBox(height: 10),
-                              TextButton(
-                                onPressed: () => _markRead(item),
-                                child: const Text('Mark read'),
-                              ),
-                            ],
+                            iconWidget,
+                            const SizedBox(height: 10),
+                            content,
                           ],
-                        ),
-                      ),
-                    ],
+                        );
+                      }
+
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          iconWidget,
+                          const SizedBox(width: 12),
+                          Expanded(child: content),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
